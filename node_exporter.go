@@ -16,6 +16,7 @@ package main
 import (
 	"fmt"
 	stdlog "log"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -144,6 +145,15 @@ func (h *handler) innerHandler(filters ...string) (http.Handler, error) {
 
 func main() {
 	var (
+		socketPath = kingpin.Flag(
+			"web.socket-path",
+			"Path to unix socket file.",
+		).String()
+		socketPermissions = kingpin.Flag(
+			"web.socket-permissions",
+			"Permissions of unix socket file.",
+		).Default("0640").Int32()
+
 		metricsPath = kingpin.Flag(
 			"web.telemetry-path",
 			"Path under which to expose metrics.",
@@ -205,10 +215,30 @@ func main() {
 		}
 		http.Handle("/", landingPage)
 	}
-
+	if *socketPath != "" {
+		level.Info(logger).Log("msg", "Listening unix socket on", "path", *socketPath)
+		os.Remove(*socketPath)
+		unixListener, err := net.Listen("unix", *socketPath)
+		if err != nil {
+			level.Error(logger).Log("err", err)
+			os.Exit(1)
+		}
+		if err := os.Chmod(*socketPath, os.FileMode(*socketPermissions)); err != nil {
+			level.Error(logger).Log("err", err)
+			os.Exit(1)
+		}
+		server := &http.Server{}
+		defer server.Close()
+		if err := server.Serve(unixListener); err != nil {
+			level.Error(logger).Log("err", err)
+			os.Exit(1)
+		}
+		return
+	}
 	server := &http.Server{}
 	if err := web.ListenAndServe(server, toolkitFlags, logger); err != nil {
 		level.Error(logger).Log("err", err)
 		os.Exit(1)
 	}
+
 }
