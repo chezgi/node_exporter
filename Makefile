@@ -1,5 +1,5 @@
 GOPKG_BASE=github.com/prometheus/node_exporter
-NXVERSION=1.5
+NXVERSION=1.6
 GOFLAGS := -ldflags "-s -w -extldflags=-static" -tags osusergo,netgo,sqlite_omit_load_extension
 cistore_soodaros=minio/soodar-cistore/soodaros/x86-64
 cistore_soodaros_arm64=minio/soodar-cistore/soodaros/aarch64
@@ -9,8 +9,8 @@ build: force
 	mkdir .build/ || true
 	go build $(GOFLAGS) -o .build/node_exporter $(GOPKG_BASE)
 	GOARCH=arm64 go build $(GOFLAGS) -o .build/node_exporter-aarch64 $(GOPKG_BASE)
-	mc cp ./build/node_exporter  $(cistore_soodaros)/node_exporter-$(NXVERSION)
-	mc cp ./build/node_exporter-aarch64  $(cistore_soodaros_arm64)/node_exporter-$(NXVERSION)
+	mc cp .build/node_exporter  $(cistore_soodaros)/node_exporter-$(NXVERSION)
+	mc cp .build/node_exporter-aarch64  $(cistore_soodaros_arm64)/node_exporter-$(NXVERSION)
 
 .PHONY: force
 force:
