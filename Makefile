@@ -3,7 +3,7 @@ NXVERSION=1.6
 GOFLAGS := -ldflags "-s -w -extldflags=-static" -tags osusergo,netgo,sqlite_omit_load_extension
 cistore_soodaros=minio/soodar-cistore/soodaros/x86-64
 cistore_soodaros_arm64=minio/soodar-cistore/soodaros/aarch64
-cistore_soodaros_arm=minio/soodar-cistore/soodaros/arm
+cistore_soodaros_arm7=minio/soodar-cistore/soodaros/arm7
 
 #--------------------------------------  build
 build: force
@@ -13,7 +13,7 @@ build: force
 	GOARCH=arm go build $(GOFLAGS) -o .build/node_exporter-arm $(GOPKG_BASE)
 	mc cp .build/node_exporter  $(cistore_soodaros)/node_exporter-$(NXVERSION)
 	mc cp .build/node_exporter-aarch64  $(cistore_soodaros_arm64)/node_exporter-$(NXVERSION)
-	mc cp .build/node_exporter-arm  $(cistore_soodaros_arm)/node_exporter-$(NXVERSION)
+	mc cp .build/node_exporter-arm  $(cistore_soodaros_arm7)/node_exporter-$(NXVERSION)
 
 .PHONY: force
 force:
