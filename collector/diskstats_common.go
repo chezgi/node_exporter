@@ -11,18 +11,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !nodiskstats && (openbsd || linux || darwin)
-// +build !nodiskstats
-// +build openbsd linux darwin
+//go:build !nodiskstats && (openbsd || linux || darwin || aix)
 
 package collector
 
 import (
 	"errors"
+	"log/slog"
 
 	"github.com/alecthomas/kingpin/v2"
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -93,26 +90,28 @@ var (
 	)
 )
 
-func newDiskstatsDeviceFilter(logger log.Logger) (deviceFilter, error) {
+func newDiskstatsDeviceFilter(logger *slog.Logger) (deviceFilter, error) {
 	if *oldDiskstatsDeviceExclude != "" {
 		if !diskstatsDeviceExcludeSet {
-			level.Warn(logger).Log("msg", "--collector.diskstats.ignored-devices is DEPRECATED and will be removed in 2.0.0, use --collector.diskstats.device-exclude")
+			logger.Warn("--collector.diskstats.ignored-devices is DEPRECATED and will be removed in 2.0.0, use --collector.diskstats.device-exclude")
 			*diskstatsDeviceExclude = *oldDiskstatsDeviceExclude
 		} else {
 			return deviceFilter{}, errors.New("--collector.diskstats.ignored-devices and --collector.diskstats.device-exclude are mutually exclusive")
 		}
 	}
-
-	if *diskstatsDeviceExclude != "" && *diskstatsDeviceInclude != "" {
-		return deviceFilter{}, errors.New("device-exclude & device-include are mutually exclusive")
+	if *diskstatsDeviceInclude != "" {
+		if diskstatsDeviceExcludeSet {
+			return deviceFilter{}, errors.New("device-exclude & device-include are mutually exclusive")
+		}
+		*diskstatsDeviceExclude = ""
 	}
 
 	if *diskstatsDeviceExclude != "" {
-		level.Info(logger).Log("msg", "Parsed flag --collector.diskstats.device-exclude", "flag", *diskstatsDeviceExclude)
+		logger.Info("Parsed flag --collector.diskstats.device-exclude", "flag", *diskstatsDeviceExclude)
 	}
 
 	if *diskstatsDeviceInclude != "" {
-		level.Info(logger).Log("msg", "Parsed Flag --collector.diskstats.device-include", "flag", *diskstatsDeviceInclude)
+		logger.Info("Parsed Flag --collector.diskstats.device-include", "flag", *diskstatsDeviceInclude)
 	}
 
 	return newDeviceFilter(*diskstatsDeviceExclude, *diskstatsDeviceInclude), nil

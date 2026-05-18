@@ -18,8 +18,12 @@ build: force
 .PHONY: force
 force:
 
+.PHONY: tools
+tools:
+	@rm ./tools/tools >/dev/null 2>&1 || true
+	@$(GO) build -o tools ./tools/...
 
-# build -tags: 
+# build -tags:
 # noarp
 # nobcache
 # nobonding

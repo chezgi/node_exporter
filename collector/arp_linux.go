@@ -12,36 +12,46 @@
 // limitations under the License.
 
 //go:build !noarp
-// +build !noarp
 
 package collector
 
 import (
 	"fmt"
+	"log/slog"
+
 	"github.com/alecthomas/kingpin/v2"
-	"github.com/go-kit/log"
+	"github.com/jsimonetti/rtnetlink/v2/rtnl"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/procfs"
+	"golang.org/x/sys/unix"
 )
 
 var (
 	arpDeviceInclude = kingpin.Flag("collector.arp.device-include", "Regexp of arp devices to include (mutually exclusive to device-exclude).").String()
 	arpDeviceExclude = kingpin.Flag("collector.arp.device-exclude", "Regexp of arp devices to exclude (mutually exclusive to device-include).").String()
+	arpNetlink       = kingpin.Flag("collector.arp.netlink", "Use netlink to gather stats instead of /proc/net/arp.").Default("true").Bool()
 )
 
 type arpCollector struct {
 	fs           procfs.FS
 	deviceFilter deviceFilter
-	entries      *prometheus.Desc
-	logger       log.Logger
+	logger       *slog.Logger
 }
 
 func init() {
 	registerCollector("arp", defaultEnabled, NewARPCollector)
 }
 
+var (
+	arpEntries = prometheus.NewDesc(
+		prometheus.BuildFQName(namespace, "arp", "entries"),
+		"ARP entries by device",
+		[]string{"device"}, nil,
+	)
+)
+
 // NewARPCollector returns a new Collector exposing ARP stats.
-func NewARPCollector(logger log.Logger) (Collector, error) {
+func NewARPCollector(logger *slog.Logger) (Collector, error) {
 	fs, err := procfs.NewFS(*procPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open procfs: %w", err)
@@ -50,12 +60,7 @@ func NewARPCollector(logger log.Logger) (Collector, error) {
 	return &arpCollector{
 		fs:           fs,
 		deviceFilter: newDeviceFilter(*arpDeviceExclude, *arpDeviceInclude),
-		entries: prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, "arp", "entries"),
-			"ARP entries by device",
-			[]string{"device"}, nil,
-		),
-		logger: logger,
+		logger:       logger,
 	}, nil
 }
 
@@ -69,20 +74,58 @@ func getTotalArpEntries(deviceEntries []procfs.ARPEntry) map[string]uint32 {
 	return entries
 }
 
-func (c *arpCollector) Update(ch chan<- prometheus.Metric) error {
-	entries, err := c.fs.GatherARPEntries()
+func getTotalArpEntriesRTNL() (map[string]uint32, error) {
+	conn, err := rtnl.Dial(nil)
 	if err != nil {
-		return fmt.Errorf("could not get ARP entries: %w", err)
+		return nil, err
+	}
+	defer conn.Close()
+
+	// Neighbors will also contain IPv6 neighbors, but since this is purely an ARP collector,
+	// restrict to AF_INET.
+	neighbors, err := conn.Neighbours(nil, unix.AF_INET)
+	if err != nil {
+		return nil, err
 	}
 
-	enumeratedEntry := getTotalArpEntries(entries)
+	// Map of interface name to ARP neighbor count.
+	entries := make(map[string]uint32)
+
+	for _, n := range neighbors {
+		// Skip entries which have state NUD_NOARP to conform to output of /proc/net/arp.
+		if n.State&unix.NUD_NOARP == 0 {
+			entries[n.Interface.Name]++
+		}
+	}
+
+	return entries, nil
+}
+
+func (c *arpCollector) Update(ch chan<- prometheus.Metric) error {
+	var enumeratedEntry map[string]uint32
+
+	if *arpNetlink {
+		var err error
+
+		enumeratedEntry, err = getTotalArpEntriesRTNL()
+		if err != nil {
+			return fmt.Errorf("could not get ARP entries: %w", err)
+		}
+	} else {
+		entries, err := c.fs.GatherARPEntries()
+		if err != nil {
+			return fmt.Errorf("could not get ARP entries: %w", err)
+		}
+
+		enumeratedEntry = getTotalArpEntries(entries)
+	}
 
 	for device, entryCount := range enumeratedEntry {
 		if c.deviceFilter.ignored(device) {
 			continue
 		}
 		ch <- prometheus.MustNewConstMetric(
-			c.entries, prometheus.GaugeValue, float64(entryCount), device)
+			arpEntries, prometheus.GaugeValue, float64(entryCount), device)
 	}
 
 	return nil

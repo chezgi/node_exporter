@@ -11,6 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build !notcpstat
+
 package collector
 
 import (
@@ -19,14 +21,13 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/josharian/native"
 	"github.com/mdlayher/netlink"
 )
 
 func Test_parseTCPStats(t *testing.T) {
 	encode := func(m InetDiagMsg) []byte {
 		var buf bytes.Buffer
-		err := binary.Write(&buf, native.Endian, m)
+		err := binary.Write(&buf, binary.NativeEndian, m)
 		if err != nil {
 			panic(err)
 		}

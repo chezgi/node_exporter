@@ -12,14 +12,13 @@
 // limitations under the License.
 
 //go:build !nostat
-// +build !nostat
 
 package collector
 
 import (
 	"fmt"
+	"log/slog"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/procfs"
 )
@@ -27,34 +26,35 @@ import (
 const cgroupsCollectorSubsystem = "cgroups"
 
 type cgroupSummaryCollector struct {
-	fs      procfs.FS
-	cgroups *prometheus.Desc
-	enabled *prometheus.Desc
-	logger  log.Logger
+	fs     procfs.FS
+	logger *slog.Logger
 }
 
 func init() {
 	registerCollector(cgroupsCollectorSubsystem, defaultDisabled, NewCgroupSummaryCollector)
 }
 
+var (
+	cgroupsCgroups = prometheus.NewDesc(
+		prometheus.BuildFQName(namespace, cgroupsCollectorSubsystem, "cgroups"),
+		"Current cgroup number of the subsystem.",
+		[]string{"subsys_name"}, nil,
+	)
+	cgroupsEnabled = prometheus.NewDesc(
+		prometheus.BuildFQName(namespace, cgroupsCollectorSubsystem, "enabled"),
+		"Current cgroup number of the subsystem.",
+		[]string{"subsys_name"}, nil,
+	)
+)
+
 // NewCgroupSummaryCollector returns a new Collector exposing a summary of cgroups.
-func NewCgroupSummaryCollector(logger log.Logger) (Collector, error) {
+func NewCgroupSummaryCollector(logger *slog.Logger) (Collector, error) {
 	fs, err := procfs.NewFS(*procPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open procfs: %w", err)
 	}
 	return &cgroupSummaryCollector{
-		fs: fs,
-		cgroups: prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, cgroupsCollectorSubsystem, "cgroups"),
-			"Current cgroup number of the subsystem.",
-			[]string{"subsys_name"}, nil,
-		),
-		enabled: prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, cgroupsCollectorSubsystem, "enabled"),
-			"Current cgroup number of the subsystem.",
-			[]string{"subsys_name"}, nil,
-		),
+		fs:     fs,
 		logger: logger,
 	}, nil
 }
@@ -66,8 +66,8 @@ func (c *cgroupSummaryCollector) Update(ch chan<- prometheus.Metric) error {
 		return err
 	}
 	for _, cs := range cgroupSummarys {
-		ch <- prometheus.MustNewConstMetric(c.cgroups, prometheus.GaugeValue, float64(cs.Cgroups), cs.SubsysName)
-		ch <- prometheus.MustNewConstMetric(c.enabled, prometheus.GaugeValue, float64(cs.Enabled), cs.SubsysName)
+		ch <- prometheus.MustNewConstMetric(cgroupsCgroups, prometheus.GaugeValue, float64(cs.Cgroups), cs.SubsysName)
+		ch <- prometheus.MustNewConstMetric(cgroupsEnabled, prometheus.GaugeValue, float64(cs.Enabled), cs.SubsysName)
 	}
 	return nil
 }

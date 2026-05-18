@@ -12,17 +12,15 @@
 // limitations under the License.
 
 //go:build !nonfsd
-// +build !nonfsd
 
 package collector
 
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/procfs/nfs"
 )
@@ -32,7 +30,7 @@ import (
 type nfsdCollector struct {
 	fs           nfs.FS
 	requestsDesc *prometheus.Desc
-	logger       log.Logger
+	logger       *slog.Logger
 }
 
 func init() {
@@ -44,7 +42,7 @@ const (
 )
 
 // NewNFSdCollector returns a new Collector exposing /proc/net/rpc/nfsd statistics.
-func NewNFSdCollector(logger log.Logger) (Collector, error) {
+func NewNFSdCollector(logger *slog.Logger) (Collector, error) {
 	fs, err := nfs.NewFS(*procPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open procfs: %w", err)
@@ -66,7 +64,7 @@ func (c *nfsdCollector) Update(ch chan<- prometheus.Metric) error {
 	stats, err := c.fs.ServerRPCStats()
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			level.Debug(c.logger).Log("msg", "Not collecting NFSd metrics", "err", err)
+			c.logger.Debug("Not collecting NFSd metrics", "err", err)
 			return ErrNoData
 		}
 		return fmt.Errorf("failed to retrieve nfsd stats: %w", err)
@@ -82,6 +80,8 @@ func (c *nfsdCollector) Update(ch chan<- prometheus.Metric) error {
 	c.updateNFSdRequestsv2Stats(ch, &stats.V2Stats)
 	c.updateNFSdRequestsv3Stats(ch, &stats.V3Stats)
 	c.updateNFSdRequestsv4Stats(ch, &stats.V4Ops)
+	ch <- prometheus.MustNewConstMetric(c.requestsDesc, prometheus.CounterValue,
+		float64(stats.WdelegGetattr), "4", "WdelegGetattr")
 
 	return nil
 }
@@ -395,6 +395,10 @@ func (c *nfsdCollector) updateNFSdRequestsv4Stats(ch chan<- prometheus.Metric, s
 		float64(s.SecInfo), proto, "SecInfo")
 	ch <- prometheus.MustNewConstMetric(c.requestsDesc, prometheus.CounterValue,
 		float64(s.SetAttr), proto, "SetAttr")
+	ch <- prometheus.MustNewConstMetric(c.requestsDesc, prometheus.CounterValue,
+		float64(s.SetClientID), proto, "SetClientID")
+	ch <- prometheus.MustNewConstMetric(c.requestsDesc, prometheus.CounterValue,
+		float64(s.SetClientIDConfirm), proto, "SetClientIDConfirm")
 	ch <- prometheus.MustNewConstMetric(c.requestsDesc, prometheus.CounterValue,
 		float64(s.Verify), proto, "Verify")
 	ch <- prometheus.MustNewConstMetric(c.requestsDesc, prometheus.CounterValue,
